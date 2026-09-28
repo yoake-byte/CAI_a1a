@@ -417,7 +417,7 @@ def train_loop(
             for sentences, slots, lengths in dev_loader:
                 sentences, slots = sentences.to(device), slots.to(device)
                 logits = model(sentences, lengths)
-                loss = criterion(logits.view(-1, len(tag2idx)), slots.view(-1))
+                loss = criterion(logits.view(-1, logits.shape[-1]), slots.view(-1))
                 val_loss += loss.item()
                 
                 preds = torch.argmax(logits, dim=-1)
