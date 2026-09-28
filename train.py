@@ -20,6 +20,7 @@ from typing import Any
 import numpy as np
 import torch
 import joblib
+from torch.utils.tensorboard import SummaryWriter
 
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments for a training run."""
@@ -396,7 +397,7 @@ def train_loop(
     writer = None
     if getattr(args, "tensorboard_logdir", None):
         os.makedirs(args.tensorboard_logdir, exist_ok=True)
-        writer = torch.utils.tensorboard.SummaryWriter(log_dir=args.tensorboard_logdir)
+        writer = SummaryWriter(log_dir=args.tensorboard_logdir)
         
     best_dev_f1 = 0.0
     
