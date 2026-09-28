@@ -37,6 +37,7 @@ class BiLSTMModel(nn.Module):
                 output is `2 * hidden_dim`).
         """
         super().__init__()
+        self.dropout = nn.Dropout(dropout_rate)
         self.embedding = nn.Embedding(vocab_size, embedding_dim)
         self.lstm = nn.LSTM(
             input_size=embedding_dim,
