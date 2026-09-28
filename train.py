@@ -250,22 +250,22 @@ def get_glove_weights(word2idx: dict, embedding_dim: int) -> torch.Tensor:
     """Downloads official GloVe directly from Stanford and builds the matrix."""
     glove_dir = "glove_data"
     glove_file = f"{glove_dir}/glove.6B.{embedding_dim}d.txt"
-    zip_path = f"{glove_dir}/glove.6B.zip"
+    # zip_path = f"{glove_dir}/glove.6B.zip"
     
-    # 1. Download and unzip if it doesn't exist locally
-    if not os.path.exists(glove_file):
-        os.makedirs(glove_dir, exist_ok=True)
-        print("Downloading official GloVe embeddings from Stanford (822MB)...")
+    # # 1. Download and unzip if it doesn't exist locally
+    # if not os.path.exists(glove_file):
+    #     os.makedirs(glove_dir, exist_ok=True)
+    #     print("Downloading official GloVe embeddings from Stanford (822MB)...")
         
-        # Download the official Stanford zip file
-        urllib.request.urlretrieve("https://nlp.stanford.edu/data/glove.6B.zip", zip_path)
+    #     # Download the official Stanford zip file
+    #     urllib.request.urlretrieve("https://nlp.stanford.edu/data/glove.6B.zip", zip_path)
         
-        print("Download complete. Extracting embeddings...")
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(glove_dir)
+    #     print("Download complete. Extracting embeddings...")
+    #     with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+    #         zip_ref.extractall(glove_dir)
             
-        # Clean up the zip file to save space
-        os.remove(zip_path)
+    #     # Clean up the zip file to save space
+    #     os.remove(zip_path)
         
     print(f"Loading vectors from {glove_file}...")
     
