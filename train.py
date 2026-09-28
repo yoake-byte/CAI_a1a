@@ -351,17 +351,21 @@ def train_loop(
     # ---------------------------------------------------------
     # BRANCH B: BiLSTM (PyTorch Training Loop)
     # ---------------------------------------------------------
-    word2idx = {'<PAD>': 0, '<UNK>': 1}
-    tag2idx = {'<PAD>': 0}
-    
-    for ex in train_data:
-        for word in ex.tokens:
-            if word not in word2idx: word2idx[word] = len(word2idx)
-        for tag in ex.slots:
-            if tag not in tag2idx: tag2idx[tag] = len(tag2idx)
-            
+
+    _, _, _, vocab = load_data(args.train_fraction, args.seed)
+    word2idx = vocab["word2idx"]
+    tag2idx = vocab["tag2idx"]
     idx2tag = {idx: tag for tag, idx in tag2idx.items()}
-    pad_idx = word2idx['<PAD>']
+    pad_idx = word2idx.get('<PAD>', 0)
+
+    # for ex in train_data:
+    #     for word in ex.tokens:
+    #         if word not in word2idx: word2idx[word] = len(word2idx)
+    #     for tag in ex.slots:
+    #         if tag not in tag2idx: tag2idx[tag] = len(tag2idx)
+            
+    # idx2tag = {idx: tag for tag, idx in tag2idx.items()}
+    # pad_idx = word2idx['<PAD>']
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
     # 2. Inject GloVe Embeddings
@@ -413,8 +417,7 @@ def train_loop(
             
             # Pass both the data and the lengths to the model
             logits = model(sentences, lengths)
-            
-            loss = criterion(logits.view(-1, len(tag2idx)), slots.view(-1))
+            loss = criterion(logits.view(-1, logits.shape[-1]), slots.view(-1))
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
