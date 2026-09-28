@@ -20,6 +20,7 @@ from typing import Any
 import numpy as np
 import torch
 import joblib
+import data_loader
 from torch.utils.tensorboard import SummaryWriter
 
 def parse_args() -> argparse.Namespace:
@@ -218,36 +219,12 @@ def compute_span_f1(true_tags: list[str], pred_tags: list[str]) -> float:
     return 2 * (precision * recall) / (precision + recall)
 
 
-def get_collate_fn(word2idx, tag2idx):
-    pad_idx = word2idx.get('<PAD>', 0)
-    
-    def collate_fn(batch_examples):
-        sentence_tensors = []
-        slot_tensors = []
-        
-        for ex in batch_examples:
-            token_ids = [word2idx.get(w, word2idx.get('<UNK>')) for w in ex.tokens]
-            slot_ids = [tag2idx[s] for s in ex.slots]
-            
-            sentence_tensors.append(torch.tensor(token_ids, dtype=torch.long))
-            slot_tensors.append(torch.tensor(slot_ids, dtype=torch.long))
-            
-        padded_sentences = torch.nn.utils.rnn.pad_sequence(sentence_tensors, batch_first=True, padding_value=pad_idx)
-        padded_slots = torch.nn.utils.rnn.pad_sequence(slot_tensors, batch_first=True, padding_value=pad_idx)
-        
-        # We don't pad intents, just stack them (if your model uses them)
-        # intents = torch.tensor([intent2idx[ex.intent] for ex in batch_examples])
-        
-        return padded_sentences, padded_slots
-        
-    return collate_fn
-
 import os
 import urllib.request
 import zipfile
 
 
-def get_glove_weights(word2idx: dict, embedding_dim: int) -> torch.Tensor:
+def get_glove_weights(token_to_id: dict, embedding_dim: int) -> torch.Tensor:
     """Downloads official GloVe directly from Stanford and builds the matrix."""
     glove_dir = "glove_data"
     glove_file = f"{glove_dir}/glove.6B.{embedding_dim}d.txt"
@@ -279,11 +256,11 @@ def get_glove_weights(word2idx: dict, embedding_dim: int) -> torch.Tensor:
             glove_dict[word] = np.array(values[1:], dtype='float32')
             
     # 3. Build weight matrix
-    vocab_size = len(word2idx)
+    vocab_size = len(token_to_id)
     weight_matrix = torch.randn((vocab_size, embedding_dim))
     
     words_found = 0
-    for word, idx in word2idx.items():
+    for word, idx in token_to_id.items():
         if word.lower() in glove_dict:
             weight_matrix[idx] = torch.tensor(glove_dict[word.lower()])
             words_found += 1
@@ -351,13 +328,36 @@ def train_loop(
     # ---------------------------------------------------------
     # BRANCH B: BiLSTM (PyTorch Training Loop)
     # ---------------------------------------------------------
-
     _, _, _, vocab = load_data(args.train_fraction, args.seed)
-    word2idx = vocab["word2idx"]
-    tag2idx = vocab["tag2idx"]
-    idx2tag = {idx: tag for tag, idx in tag2idx.items()}
-    pad_idx = word2idx.get('<PAD>', 0)
+    token_to_id = vocab["token_to_id"]
+    word_pad_idx = token_to_id.get('<PAD>', 0)
+    word_unk_idx = token_to_id.get('<UNK>', 1)
+    
+    # 2. Build tag_to_id directly from the data_loader's official set
+    # Sorting guarantees the mapping is deterministic and matches the tagset_size
+    all_tags = sorted(list(data_loader.slot_label_set(train_data)))
+    tag_to_id = {tag: i for i, tag in enumerate(all_tags)}
+    id_to_tag = {i: tag for tag, i in tag_to_id.items()}
 
+
+    def collate_fn(batch_examples):
+            sentence_tensors, slot_tensors, lengths = [], [], []
+            for ex in batch_examples:
+                token_ids = [token_to_id.get(w, word_unk_idx) for w in ex.tokens]
+                # Default to an existing tag (like 'O') if unseen, but typically dev sets don't have unknown tags
+                slot_ids = [tag_to_id.get(s, 0) for s in ex.slots]
+                
+                sentence_tensors.append(torch.tensor(token_ids, dtype=torch.long))
+                slot_tensors.append(torch.tensor(slot_ids, dtype=torch.long))
+                lengths.append(len(token_ids))
+                
+            # Pad sentences with the official <PAD> id
+            padded_sentences = torch.nn.utils.rnn.pad_sequence(sentence_tensors, batch_first=True, padding_value=word_pad_idx)
+            # Pad slots with -100 so CrossEntropyLoss automatically ignores them
+            padded_slots = torch.nn.utils.rnn.pad_sequence(slot_tensors, batch_first=True, padding_value=-100)
+            
+            lengths_tensor = torch.tensor(lengths, dtype=torch.long)
+            return padded_sentences, padded_slots, lengths_tensor
     # for ex in train_data:
     #     for word in ex.tokens:
     #         if word not in word2idx: word2idx[word] = len(word2idx)
@@ -371,24 +371,8 @@ def train_loop(
     # 2. Inject GloVe Embeddings
     # Extract the model's actual embedding dimension (e.g., 100)
     embedding_dim = model.embedding.embedding_dim 
-    glove_weights = get_glove_weights(word2idx, embedding_dim)
+    glove_weights = get_glove_weights(token_to_id, embedding_dim)
     model.embedding.weight.data.copy_(glove_weights)
-    
-    # 2. Define Collate Function
-    def collate_fn(batch_examples):
-        sentence_tensors, slot_tensors, lengths = [], [], []
-        for ex in batch_examples:
-            token_ids = [word2idx.get(w, word2idx['<UNK>']) for w in ex.tokens]
-            slot_ids = [tag2idx.get(s, tag2idx['<PAD>']) for s in ex.slots]
-            sentence_tensors.append(torch.tensor(token_ids, dtype=torch.long))
-            slot_tensors.append(torch.tensor(slot_ids, dtype=torch.long))
-            lengths.append(len(token_ids))
-            
-        padded_sentences = torch.nn.utils.rnn.pad_sequence(sentence_tensors, batch_first=True, padding_value=pad_idx)
-        padded_slots = torch.nn.utils.rnn.pad_sequence(slot_tensors, batch_first=True, padding_value=pad_idx)
-        lengths_tensor = torch.tensor(lengths, dtype=torch.long)
-        return padded_sentences, padded_slots, lengths_tensor
-
         
 
     # Setup DataLoaders
@@ -396,7 +380,7 @@ def train_loop(
     dev_loader = torch.utils.data.DataLoader(dev_data, batch_size=getattr(args, 'batch_size', 32), shuffle=False, collate_fn=collate_fn)
     
     optimizer = torch.optim.Adam(model.parameters(), lr=getattr(args, 'learning_rate', 0.001))
-    criterion = torch.nn.CrossEntropyLoss(ignore_index=pad_idx)
+    criterion = torch.nn.CrossEntropyLoss(ignore_index=-100)
     
     writer = None
     if getattr(args, "tensorboard_logdir", None):
@@ -441,9 +425,9 @@ def train_loop(
                 
                 for i in range(len(slots_list)):
                     for j in range(len(slots_list[i])):
-                        if slots_list[i][j] != pad_idx:
-                            all_true_tags.append(idx2tag[slots_list[i][j]])
-                            all_pred_tags.append(idx2tag[preds_list[i][j]])
+                        if slots_list[i][j] != -100:
+                            all_true_tags.append(id_to_tag[slots_list[i][j]])
+                            all_pred_tags.append(id_to_tag[preds_list[i][j]])
                             
         avg_train_loss = train_loss / len(train_loader)
         avg_val_loss = val_loss / len(dev_loader)
