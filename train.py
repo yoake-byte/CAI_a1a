@@ -371,26 +371,26 @@ def train_loop(
     
     # 2. Define Collate Function
     def collate_fn(batch_examples):
-            sentence_tensors, slot_tensors, lengths = [], [], []
-            for ex in batch_examples:
-                token_ids = [word2idx.get(w, word2idx['<UNK>']) for w in ex.tokens]
-                slot_ids = [tag2idx.get(s, tag2idx['<PAD>']) for s in ex.slots]
-                sentence_tensors.append(torch.tensor(token_ids, dtype=torch.long))
-                slot_tensors.append(torch.tensor(slot_ids, dtype=torch.long))
-                lengths.append(len(token_ids))
-                
-            padded_sentences = torch.nn.utils.rnn.pad_sequence(sentence_tensors, batch_first=True, padding_value=pad_idx)
-            padded_slots = torch.nn.utils.rnn.pad_sequence(slot_tensors, batch_first=True, padding_value=pad_idx)
-            lengths_tensor = torch.tensor(lengths, dtype=torch.long)
-            return padded_sentences, padded_slots, lengths_tensor
-    
+        sentence_tensors, slot_tensors, lengths = [], [], []
+        for ex in batch_examples:
+            token_ids = [word2idx.get(w, word2idx['<UNK>']) for w in ex.tokens]
+            slot_ids = [tag2idx.get(s, tag2idx['<PAD>']) for s in ex.slots]
+            sentence_tensors.append(torch.tensor(token_ids, dtype=torch.long))
+            slot_tensors.append(torch.tensor(slot_ids, dtype=torch.long))
+            lengths.append(len(token_ids))
+            
+        padded_sentences = torch.nn.utils.rnn.pad_sequence(sentence_tensors, batch_first=True, padding_value=pad_idx)
+        padded_slots = torch.nn.utils.rnn.pad_sequence(slot_tensors, batch_first=True, padding_value=pad_idx)
+        lengths_tensor = torch.tensor(lengths, dtype=torch.long)
+        return padded_sentences, padded_slots, lengths_tensor
+
         
 
     # Setup DataLoaders
-    train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, collate_fn=collate_fn)
-    dev_loader = torch.utils.data.DataLoader(dev_data, batch_size=args.batch_size, shuffle=False, collate_fn=collate_fn)
+    train_loader = torch.utils.data.DataLoader(train_data, batch_size=getattr(args, 'batch_size', 32), shuffle=True, collate_fn=collate_fn)
+    dev_loader = torch.utils.data.DataLoader(dev_data, batch_size=getattr(args, 'batch_size', 32), shuffle=False, collate_fn=collate_fn)
     
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+    optimizer = torch.optim.Adam(model.parameters(), lr=getattr(args, 'learning_rate', 0.001))
     criterion = torch.nn.CrossEntropyLoss(ignore_index=pad_idx)
     
     writer = None
@@ -400,7 +400,7 @@ def train_loop(
         
     best_dev_f1 = 0.0
     
-    for epoch in range(args.epochs):
+    for epoch in range(getattr(args, 'epochs', 5)):
         # --- TRAINING PHASE ---
         model.train()
         train_loss = 0.0
