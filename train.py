@@ -432,7 +432,18 @@ def train_loop(
         avg_train_loss = train_loss / len(train_loader)
         avg_val_loss = val_loss / len(dev_loader)
         current_f1 = compute_span_f1(all_true_tags, all_pred_tags)
-        
+
+        checkpoint = {
+            "state_dict": model.state_dict(),
+            "vocab_size": len(token_to_id),  # or however your vocab size is stored
+            "tagset_size": len(id_to_tag),   # or however your tagset size is stored
+            "vocab": {
+                "token_to_id": token_to_id,
+                "id_to_tag": id_to_tag
+            }
+        }
+
+       
         if writer:
             # writer.add_scalar('Loss/Train', avg_train_loss, epoch)
             # writer.add_scalar('Loss/Validation', avg_val_loss, epoch)
@@ -445,9 +456,8 @@ def train_loop(
             best_dev_f1 = current_f1
             os.makedirs(args.checkpoint_dir, exist_ok=True)
             # Adjust the saved dict based on evaluate.py's load_model() expectations
-            torch.save({
-                'model_state_dict': model.state_dict(),
-            }, os.path.join(args.checkpoint_dir, "bilstm_model.pt"))
+            torch.save(checkpoint, os.path.join(args.checkpoint_dir, "bilstm_model.pt"))
+         
             
     if writer:
         writer.close()
