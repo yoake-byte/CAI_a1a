@@ -23,6 +23,8 @@ class BiLSTMModel(nn.Module):
         tagset_size: int,
         embedding_dim: int = 100,
         hidden_dim: int = 128,
+        num_layers: int = 2,     # <--- ADDED: Stacking 2 layers
+        dropout_rate: float = 0.4 # <--- ADDED: 0.3 to 0.5 is the sweet spot
     ) -> None:
         """Define the model's layers per the README's architecture:
         embeddings -> BiLSTM -> per-token softmax.
@@ -39,8 +41,11 @@ class BiLSTMModel(nn.Module):
         self.lstm = nn.LSTM(
             input_size=embedding_dim,
             hidden_size=hidden_dim,
+            num_layers=num_layers,          # <--- Update to use parameter
             bidirectional=True,
             batch_first=True,
+            dropout=dropout_rate if num_layers > 1 else 0 # Applies dropout between LSTM layers
+
         )
         self.hidden2tag = nn.Linear(2 * hidden_dim, tagset_size)
 
@@ -71,6 +76,7 @@ class BiLSTMModel(nn.Module):
         """
         # ------------------------------------------------------------------
         embeds = self.embedding(sentences_batch)
+        embeds = self.dropout(embeds)
         packed_embeds = torch.nn.utils.rnn.pack_padded_sequence(
             embeds, 
             lengths.cpu(), 
@@ -85,6 +91,8 @@ class BiLSTMModel(nn.Module):
             batch_first=True, 
             total_length=sentences_batch.size(1)
         )
+        
+        lstm_out = self.dropout(lstm_out)
 
         tag_logits = self.hidden2tag(lstm_out)
                 
